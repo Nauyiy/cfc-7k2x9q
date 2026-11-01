@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta name="robots" content="noindex, nofollow">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lab作業格式檢查器</title>
+<style>
+:root{--bg:#fafaf8;--fg:#1f2328;--mut:#6b7280;--card:#fff;--bd:#e3e3df;--ac:#2563eb;--er:#dc2626;--hn:#d97706;--ok:#16a34a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17181a;--fg:#e8e8e6;--mut:#9aa0a6;--card:#202225;--bd:#33363a;--ac:#6ea0ff;--er:#ff7b72;--hn:#e3b341;--ok:#56d364}}
+:root[data-theme="dark"]{--bg:#17181a;--fg:#e8e8e6;--mut:#9aa0a6;--card:#202225;--bd:#33363a;--ac:#6ea0ff;--er:#ff7b72;--hn:#e3b341;--ok:#56d364}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,"Noto Sans TC","PingFang TC",sans-serif;padding:16px}
+main{max-width:1100px;margin:0 auto}
+h1{font-size:20px;margin:0}.sub{color:var(--mut);margin:2px 0 14px;font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;min-width:0}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:13px}
+button,.btn{background:var(--ac);color:#fff;border:0;border-radius:6px;padding:6px 12px;cursor:pointer;font:inherit}
+.btn.alt{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+textarea{width:100%;height:480px;resize:vertical;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;overflow:auto;tab-size:4}
+#sum{font-weight:600;margin-bottom:8px}
+#list{max-height:520px;overflow:auto}
+.it{display:flex;gap:8px;padding:6px 4px;border-top:1px solid var(--bd);cursor:pointer;font-size:14px}
+.it:hover{background:var(--bg)}
+.ln{color:var(--mut);min-width:3.2em;font-family:ui-monospace,monospace}
+.tag{font-size:11px;border-radius:4px;padding:0 6px;height:20px;line-height:20px;white-space:nowrap;color:#fff}
+.E{background:var(--er)}.H{background:var(--hn)}
+.rl{color:var(--mut);font-size:12px;white-space:nowrap}
+.ok{color:var(--ok)}
+footer{color:var(--mut);font-size:12px;margin-top:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>Lab作業格式檢查器</h1>
+<p class="sub">EE231002 · 依張彌彰教授批改規範（規則 01–45）· 程式只在你的瀏覽器執行，不會上傳</p>
+<div class="grid">
+<section class="card">
+<div class="bar"><label class="btn alt">上傳 .c 檔<input type="file" id="f" accept=".c,.h,.txt" hidden></label><button id="go">檢查</button><label><input type="checkbox" id="hint" checked> 顯示提示</label></div>
+<textarea id="src" spellcheck="false" placeholder="把程式碼貼在這裡…"></textarea>
+</section>
+<section class="card"><div id="sum">貼上程式碼後按「檢查」</div><div id="list"></div></section>
+</div>
+<footer>未涵蓋：輸出內容比對（規則 40、42–44）與 gcc 編譯警告（規則 29–31、34），請自行用 <code>gcc -Wall</code> 確認。「提示」為推測性項目，可能誤報。</footer>
+</main>
+<script>
+const BUILTIN=['unsigned','signed','const','static','volatile','register','short','long','int','char','float','double','void','size_t','FILE'];
+const CTRL=new Set(['if','for','while','switch']);
+const NOT_FUNC=new Set([...CTRL,'return','sizeof','else','case','do','defined']);
+const NOT_OP=new Set(['return','case','else','do','goto']);
+const BIN=new Set('+ - / % << >> == != <= >= < > = && || | ^ += -= *= /= %= &= |= ^= <<= >>='.split(' '));
+const CONT=new Set([...BIN,'*','&',',','?','(','[','.','->']);
+const MIS=Object.fromEntries('paragragh:paragraph coner:corner indice:indices polynomail:polynomial caculate:calculate facctors:factors funtion:function lenth:length multiplicate:multiplication occured:occurred ouput:output postion:position ture:true abd:and arrat:array arry:array calcaulate:calculate claculate:calculate colunm:column corrosponding:corresponding delet:delete demended:demanded determin:determine devide:divide devided:divided dimentions:dimensions dont:don\'t downmost:bottommost eqal:equal facctor:factor fiist:first heghest:highest ilfe:life interger:integer intergeruations:Integer-Equations intialize:initialize linkde:linked linklist:linked-list manange:manage memeory:memory noed:node numeber:number octorber:October ponits:points posistion:position postition:position previos:previous priem:prime represnet:represent requirment:requirement sapce:space seaching:searching sloutions:Solutions suming:summing toching:touching totoal:total untill:until whlie:while lob:Lab'.split(' ').map(x=>x.split(':')));
+const SUB=Object.keys(MIS).filter(k=>k.length>=7&&k!=='determin');
+const TOK=/("[^"]*"|'[^']*')|(0[xX][0-9a-fA-F]+[uUlL]*|(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?[fFlLuU]*)|([A-Za-z_]\w*)|(<<=|>>=|->|\+\+|--|<<|>>|<=|>=|==|!=|&&|\|\||[-+*\/%&|^]=|[-+*\/%<>=!&|^~?:.,;(){}\[\]])|(\S)/g;
+function tokenize(c){const r=[];let m;TOK.lastIndex=0;while((m=TOK.exec(c)))r.push({k:m[1]?'str':m[2]?'num':m[3]?'id':m[4]?'op':'x',t:m[0],s:m.index,e:m.index+m[0].length});return r}
+const W=s=>[...s].reduce((a,c)=>a+(c.charCodeAt(0)>0x2e7f?2:1),0);
+const isOp=p=>!!p&&(p.k==='num'||p.k==='str'||(p.k==='id'&&!NOT_OP.has(p.t))||p.t===')'||p.t===']');
+
+function scan(raw){
+  const out=[];let blk=false,pc=false;
+  raw.forEach((r,ix)=>{
+    const n=r.length;let i=0,code='',com=[],str=[];
+    while(i<n){
+      if(blk){const j=r.indexOf('*/',i);if(j<0){com.push({col:i,t:r.slice(i),k:'b'});code+=' '.repeat(n-i);i=n}else{com.push({col:i,t:r.slice(i,j),k:'b'});code+=' '.repeat(j+2-i);i=j+2;blk=false}}
+      else if(r.startsWith('//',i)){com.push({col:i,t:r.slice(i),k:'l'});code+=' '.repeat(n-i);i=n}
+      else if(r.startsWith('/*',i)){blk=true;code+='  ';i+=2}
+      else if(r[i]==='"'||r[i]==="'"){const q=r[i];let j=i+1;while(j<n&&r[j]!==q)j+=r[j]==='\\'?2:1;
+        if(j<n){if(q==='"')str.push(r.slice(i+1,j));code+=q+'s'.repeat(j-i-1)+q;i=j+1}else{code+=q+'s'.repeat(n-i-1);i=n}}
+      else{code+=r[i];i++}
+    }
+    const prep=code.trimStart().startsWith('#')||pc;pc=prep&&/\\\s*$/.test(r);
+    out.push({no:ix+1,raw:r,code,com,str,prep,blank:!r.trim()});
+  });
+  return out;
+}
+
+function check(text){
+  const raw=text.split(/\r?\n/).map(r=>r.replace(/^\t+/,m=>'    '.repeat(m.length))),iss=[],seen=new Set();
+  const add=(no,lv,rule,msg)=>{const k=no+'|'+rule+'|'+msg;if(!seen.has(k)){seen.add(k);iss.push({no,lv,rule,msg})}};
+  const L=scan(raw),n=L.length,src=L.map(l=>l.code).join('\n'),td=new Set();
+  for(const r of src.matchAll(/\btypedef\b[^;{]*?\b(\w+)\s*;/g))td.add(r[1]);
+  for(const r of src.matchAll(/typedef\s+(?:struct|union|enum)\s*\w*\s*\{[\s\S]*?\}\s*(\w+)\s*;/g))td.add(r[1]);
+  for(const r of src.matchAll(/\b(?:struct|union|enum)\s+(\w+)/g))td.add(r[1]);
+  const tw=new Set([...BUILTIN,...td]);
+  const base='(?:'+[...BUILTIN,...td,'struct\\s+\\w+','enum\\s+\\w+','union\\s+\\w+'].join('|')+')';
+  const DECL=new RegExp('^(?:'+base+'\\s+)*'+base+'[\\s*]+\\w+\\s*(?:\\[|=|,|;|$)');
+  const FORD=new RegExp('\\bfor\\s*\\(\\s*(?:'+base+'\\s+)*'+base+'[\\s*]+\\w+\\s*=');
+  const HDR=new RegExp('^(?:'+base+'[\\s*]+)+(\\w+)\\s*\\(');
+
+  // 檔頭
+  if(n>=1&&!/^\/\/ EE231002 Lab\d{2}\. \S/.test(L[0].raw))add(1,'E','05','第 1 行應為 "// EE231002 Lab0X. 作業標題"（Lab 與標題勿拼錯）');
+  if(n>=2){const h=L[1].raw.trim();
+    if(!h.startsWith('// '))add(2,'E','04','第 2 行應為 "// 學號, 中文姓名"，// 後要留一個空白');
+    else{const m=h.slice(3).trim().match(/^([A-Za-z0-9_]+)\s*([,，]?)\s*(.*)$/);
+      if(!m)add(2,'E','01','第 2 行應為 "// 學號, 中文姓名"');
+      else{const[,id,cm,nm]=m;
+        if(/^[A-Za-z]+\d{9}$/.test(id))add(2,'E','01','學號必須是 9 碼純數字，不可加 EE / u 等前綴');
+        else if(!/^\d{9}$/.test(id))add(2,'E','01','學號應為 9 碼純數字');
+        if(cm!==',')add(2,'E','03','學號與姓名之間要用半形逗號 ", "');
+        if(!nm)add(2,'E','02','缺少中文姓名');else if(!/^[\u4e00-\u9fff·．]+$/.test(nm))add(2,'E','02','姓名必須使用中文真實姓名，不可用英文名');}}}
+  if(n>=3&&!/^\/\/ Date: \d{4}\/\d{2}\/\d{2}\s*$/.test(L[2].raw))add(3,'E','05','第 3 行應為 "// Date: YYYY/MM/DD"（月日補零）');
+
+  // 逐行簡單規則 + 拼字
+  L.forEach((l,i)=>{
+    const no=l.no;
+    if(W(l.raw)>80)add(no,'E','06','這一行超過 80 字元');
+    if(/\s+$/.test(l.raw))add(no,'H','37','行尾有多餘空白');
+    if(/\\\s*$/.test(l.raw)&&!l.prep)add(no,'E','36','一般敘述換行不可在行尾加反斜線 \\（只有 #define 可以）');
+    if(l.prep){
+      if(/^\s*#\s*include/.test(l.raw)&&!/^#include [<"]/.test(l.raw))add(no,'E','07','#include 與 <...> 之間要留一個空白');
+      const m=l.raw.match(/^\s*#\s*define\s+(\w+)/);if(m&&/[a-z]/.test(m[1]))add(no,'H','45','巨集 '+m[1]+' 含小寫字母，請確認與講義大小寫一致');
+    }
+    for(const c of l.com){
+      if(c.k==='l'&&/^\/\/[^\s\/]/.test(c.t))add(no,'E','04','// 後面要留一個空白');
+      if(c.k==='l'&&l.code.trim()&&c.col>0&&!/\s/.test(l.raw[c.col-1]))add(no,'E','15','程式碼與 // 註解之間要留空白');
+    }
+    for(const s of l.str){if(/ \\n$/.test(s))add(no,'H','41','輸出字串在 \\n 前有空白，每行行尾不可多印空白');if(/%l?g/.test(s))add(no,'H','44','使用了 %g，若題目範例要保留 .0 請改用 %.1f')}
+    for(const w of l.raw.match(/[A-Za-z]+/g)||[]){
+      let hit=null;for(const p of w.replace(/([a-z])(?=[A-Z])/g,'$1 ').split(' '))if(MIS[p.toLowerCase()]){hit=p.toLowerCase();break}
+      if(!hit)hit=SUB.find(k=>w.toLowerCase().includes(k))||null;
+      if(hit)add(no,'E','28','拼字錯誤：'+hit+' → '+MIS[hit].replace('-',' '));
+      else if(w==='pythagorean')add(no,'E','28','專有名詞 pythagorean 字首要大寫');
+    }
+  });
+
+  // 結構
+  const st=[];let pd=0,cont=false,pend=null,cb=null,lastCtl=null,hdr=null,pdef=null,fn=null,lastCode='',dSeen=false,dEnd=-1,dChain=false;
+  for(let i=0;i<n;i++){
+    const l=L[i],s=l.code.trim();
+    if(l.prep)continue;
+    if(!s){if(/^\/\//.test(l.raw)&&st.length)add(l.no,'E','26','函式內的區段註解要和下方程式碼同縮排，不可貼齊第 1 欄');continue}
+    const tk=tokenize(l.code),first=tk[0],last=tk[tk.length-1];
+    const ind=l.raw.length-l.raw.trimStart().length,starts=!cont,pd0=pd;let semis=0;
+    for(let k=0;k<tk.length;k++){
+      const t=tk[k],p=tk[k-1],nx=tk[k+1],sB=!!p&&t.s>p.e,sA=!!nx&&nx.s>t.e,x=t.t,N=l.no;
+      if(x==='('){pd++;if(nx&&sA)add(N,'E','38','"(" 後面不可留空白')}
+      else if(x===')'){pd--;if(p&&sB)add(N,'E','38','")" 前面不可留空白')}
+      else if(x==='['){if(nx&&sA)add(N,'E','38','"[" 後面不可留空白')}
+      else if(x===']'){if(p&&sB)add(N,'E','38','"]" 前面不可留空白')}
+      else if(x===','){if(p&&sB)add(N,'E','13','逗號前面不可留空白');if(nx&&!sA)add(N,'E','13','逗號後面要留一個空白')}
+      else if(x===';'){
+        if(pd===0){semis++;if(nx&&nx.t===';')add(N,'E','17','多餘的分號 ;;')}
+        if(p&&sB&&!((p.t==='('||p.t===';')&&pd>0))add(N,'E','13','分號前面不可留空白');
+        if(nx&&!sA&&nx.t!==')'&&nx.t!==';')add(N,'E','13','分號後面要留一個空白')}
+      else if(x==='{'){if(p&&!sB&&!['{','(','['].includes(p.t))add(N,'E','15','"{" 前面要留一個空白')}
+      else if(x==='->'){if((p&&sB)||(nx&&sA))add(N,'E','12','"->" 前後不可留空白')}
+      else if(x==='.'){if(isOp(p)&&nx&&(sB||sA))add(N,'E','12','"." 前後不可留空白')}
+      else if(x==='++'||x==='--'){if(isOp(p)){if(sB)add(N,'E','11','"'+x+'" 與運算元之間不可留空白')}else if(nx&&sA)add(N,'E','11','"'+x+'" 與運算元之間不可留空白')}
+      else if(x==='!'||x==='~'){if(nx&&sA)add(N,'E','11','"'+x+'" 與運算元之間不可留空白')}
+      else if(x==='*'||x==='&'){
+        if(isOp(p)&&p.k==='id'&&tw.has(p.t)){}
+        else if(isOp(p)){if(!sB&&!sA)add(N,'E','10','二元運算子 "'+x+'" 前後各要留一個空白');else if(sB!==sA&&nx)add(N,'E','10','二元運算子 "'+x+'" 前後空白不對稱')}
+        else if(nx&&sA)add(N,'E','11','一元運算子 "'+x+'" 與運算元之間不可留空白')}
+      else if(BIN.has(x)){
+        const bin=!((x==='+'||x==='-')&&!isOp(p));
+        if(bin){if(p&&!sB)add(N,'E','10','運算子 "'+x+'" 前面要留一個空白');if(nx&&!sA)add(N,'E','10','運算子 "'+x+'" 後面要留一個空白')}
+        else if(nx&&sA)add(N,'E','11','正負號 "'+x+'" 與運算元之間不可留空白')}
+      else if(t.k==='id'){
+        if(CTRL.has(x)&&nx&&nx.t==='('&&!sA)add(N,'E','08',x+' 與 "(" 之間要留一個空白');
+        else if(!NOT_FUNC.has(x)&&!BUILTIN.includes(x)&&nx&&nx.t==='('&&sA)add(N,'E','09','函式名稱 '+x+' 與 "(" 之間不可留空白')}
+      else if(t.k==='num'){if(nx&&nx.k==='id'&&!sA)add(N,'E','29','識別字不可以數字開頭（'+x+nx.t+'）')}
+    }
+    if(first.t===',')add(l.no,'E','14','逗號不可放在行首，要留在上一行行尾');
+    if(semis>1)add(l.no,'E','20','同一行有多個敘述，請拆成多行');
+    tk.forEach((t,k)=>{if((t.t==='if'||t.t==='while')&&tk[k+1]&&tk[k+1].t==='('){let d=0;for(const u of tk.slice(k+1)){if(u.t==='(')d++;else if(u.t===')'){d--;if(!d)break}else if(u.t==='='&&d===1)add(l.no,'E','39','條件式中直接用 = 賦值，請先賦值再比較')}}});
+
+    let nc=0;while(nc<tk.length&&tk[nc].t==='}')nc++;
+    const rest=tk.slice(nc),rt=rest.length?l.code.slice(rest[0].s).trim():'';
+    for(let c=0;c<nc;c++){if(!st.length)break;const top=st.pop();
+      if(c===0&&ind!==top.ind)add(l.no,'E','16','"}" 要和對應區塊開頭對齊（應縮排 '+top.ind+' 格）');
+      if(!st.length&&fn){
+        if(fn.name==='main'&&lastCode!=='return 0;')add(l.no,'E','33','main 結尾要有 return 0;');
+        if(c===nc-1&&l.raw.trimEnd()==='}'&&i+1<n&&!L[i+1].blank)add(L[i+1].no,'E','19','不同函式之間要空一行');
+        fn=null}}
+    if(nc&&rest.length&&rest[0].k==='id'&&!['else','while'].includes(rest[0].t)&&!(rest[1]&&[';',',','['].includes(rest[1].t)))add(l.no,'E','16','"}" 後面不應接其他敘述，右大括號要獨佔一行');
+
+    if(starts){
+      const bp=pend;pend=null;const top=st[st.length-1];
+      if(nc===0&&first.t!=='case'&&first.t!=='default'&&!(top&&top.sw)){
+        const normal=top?top.ind+4:0,exp=first.t==='{'?(bp!==null?bp:normal):(bp!==null?bp+4:normal);
+        if(ind!==exp)add(l.no,'E','37','縮排應為 '+exp+' 格（目前 '+ind+' 格），請全篇統一用 4 格');}}
+
+    if(!st.length&&!hdr&&starts&&pd0===0){const m=l.code.trim().match(HDR);if(m)hdr={name:m[1],start:i,text:''}}
+    if(hdr){hdr.text+=' '+s;
+      if(pd===0){
+        const a=hdr.text.indexOf('('),b=hdr.text.lastIndexOf(')'),pr=b>a?hdr.text.slice(a+1,b):'',hl=L[hdr.start].no;
+        if(!pr.trim())add(hl,'E','32','沒有參數的函式要寫 (void)，不可留空 ()');
+        if(hdr.name!=='main'&&/\[\s*\]/.test(pr))add(hl,'E','講評','陣列參數需有固定維度，例如 int a[5]');
+        if(last.t===';')hdr=null;
+        else{if(last.t==='{')add(l.no,'E','講評','函式定義的 "{" 要獨立一行');pdef=hdr;hdr=null}}}
+
+    if(starts&&rest.length&&!['{',';','}'].includes(rt)){
+      const isD=DECL.test(rt);
+      if(FORD.test(rt))add(l.no,'E','21','for 內不可宣告變數，變數要集中在函式開頭');
+      if(!st.length){
+        if(isD&&!rt.includes('(')&&rt.endsWith(';')&&!l.com.length&&!(i&&L[i-1].com.length&&!L[i-1].code.trim()))add(l.no,'E','24','全域變數 / 結構陣列宣告需加用途註解');
+      }else{
+        const top=st[st.length-1];
+        if(isD){if(top.seen)add(l.no,'E','21','不可在敘述中間宣告變數（Do not mix declarations with statements）')}else top.seen=true;
+        if(fn&&st.length===1){
+          if(isD){dSeen=true;dEnd=i;dChain=true}
+          else{if(dSeen){let b=false;for(let j=dEnd+1;j<i;j++)if(L[j].blank)b=true;if(!b)add(l.no,'E','18','變數宣告區與執行敘述之間要空一行');dSeen=false}dChain=false}
+        }}
+    }else if(cont&&dChain)dEnd=i;
+    if(fn&&/^return\s*;$/.test(s)){let j=i+1;while(j<n&&(L[j].blank||!L[j].code.trim()))j++;if(j<n&&L[j].raw.trimEnd()==='}')add(l.no,'E','33','函式結尾不用寫多餘的 return;')}
+
+    for(const t of rest){
+      if(t.t==='{'){
+        if(!st.length&&pdef){fn=pdef;pdef=null;dSeen=false;dChain=false;
+          if(fn.name!=='main'){let j=fn.start-1,c=[];while(j>=0&&L[j].com.length&&!L[j].code.trim()){c.push(L[j].raw.toLowerCase());j--}
+            if(!c.length)add(L[fn.start].no,'E','23','函式 '+fn.name+' 定義上方缺少說明註解');
+            else if(!/input|output|return/.test(c.join(' ')))add(L[fn.start].no,'H','23','函式 '+fn.name+' 的說明註解建議寫出 Input / Output')}}
+        st.push({ind,sw:first.t==='switch'||(first.t==='{'&&lastCtl==='switch'),seen:false})}
+      else if(t.t==='}'&&st.length)st.pop();
+    }
+    const head=rest.length?rest[0].t:null,ctl=CTRL.has(head)||head==='else'||head==='do';
+    if(starts&&ctl)cb=ind;
+    const cn=pd>0||CONT.has(last.t);
+    if(!cn&&cb!==null){if(!['{',';','}'].includes(last.t))pend=cb;cb=null}
+    cont=cn;if(first.t!=='{')lastCtl=ctl?head:null;
+    lastCode=s;if(last.t===';')lastCtl=null;
+  }
+  return iss.sort((a,b)=>a.no-b.no);
+}
+
+const $=id=>document.getElementById(id),src=$('src');
+function run(){
+  const all=check(src.value),show=$('hint').checked?all:all.filter(i=>i.lv==='E');
+  const e=all.filter(i=>i.lv==='E').length,h=all.length-e,sum=$('sum'),list=$('list');
+  list.textContent='';
+  if(!src.value.trim()){sum.textContent='貼上程式碼後按「檢查」';return}
+  if(!all.length){sum.className='ok';sum.textContent='✓ 格式檢查通過';return}
+  sum.className='';sum.textContent='共 '+all.length+' 項：錯誤 '+e+'、提示 '+h;
+  for(const i of show){
+    const d=document.createElement('div');d.className='it';
+    const a=document.createElement('span');a.className='ln';a.textContent='第 '+i.no+' 行';
+    const t=document.createElement('span');t.className='tag '+i.lv;t.textContent=i.lv==='E'?'錯誤':'提示';
+    const m=document.createElement('span');m.textContent=i.msg;m.style.flex='1';
+    const r=document.createElement('span');r.className='rl';r.textContent=/^\d+$/.test(i.rule)?'規則 '+i.rule:i.rule;
+    d.append(a,t,m,r);
+    d.onclick=()=>{const ls=src.value.split('\n');let s=0;for(let k=0;k<i.no-1;k++)s+=ls[k].length+1;src.focus();src.setSelectionRange(s,s+(ls[i.no-1]||'').length);src.scrollTop=Math.max(0,(i.no-5)*18.9)};
+    list.append(d);
+  }
+}
+$('go').onclick=run;$('hint').onchange=run;
+let tm;src.addEventListener('input',()=>{clearTimeout(tm);tm=setTimeout(run,400)});
+$('f').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{src.value=r.result;run()};r.readAsText(f)};
+</script>
+</body>
+</html>
